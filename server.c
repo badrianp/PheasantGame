@@ -1,6 +1,7 @@
 #include <unistd.h>
 #include <stdio.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <stdlib.h>
 #include <netinet/in.h>
 #include <string.h>
@@ -9,7 +10,7 @@
 #include <semaphore.h>
 #define PORT 8080
 
-pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
+// pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
 int ACTIVE_SESSIONS = 0;
 struct GameSession
 {
@@ -18,7 +19,7 @@ struct GameSession
     int connectedPlayers;
     int scores[7];
     int gameState;
-    sem_t semaphore;
+    sem_t *semaphore;
     int turn;
     int owner;
     char lastWord[1024];
@@ -34,7 +35,7 @@ int createServer(int server_fd, struct sockaddr_in address)
         exit(EXIT_FAILURE);
     }
 
-    if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR,
+    if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEPORT,
                    &opt, sizeof(opt)))
     {
         perror("setsockopt");
@@ -102,7 +103,7 @@ int checkIfRoomExists(char *room)
 
 char pickARandomLetter()
 {
-    char *alphabet = "abcdefghijklmnopqrstuvxywz";
+    char *alphabet = "abcdefghijklmnopqrstuvxz";
     int index = rand() % strlen(alphabet);
     return alphabet[index];
 }
@@ -141,7 +142,8 @@ void controlBroadcast(int sessionIndex, int playerIndex)
         {
             if (sessions[sessionIndex].scores[i] > 0)
             {
-                sem_post(&sessions[sessionIndex].semaphore);
+                sem_post(sessions[sessionIndex].semaphore);
+                printf("sem_broadcast_post");
             }
         }
     }
@@ -200,7 +202,8 @@ void fazanGameLogic(int client, int playerIndex, int sessionIndex)
             return;
         }
 
-        if (sessions[sessionIndex].lastWord && strlen(sessions[sessionIndex].lastWord) > 0)
+        // if (sessions[sessionIndex].lastWord && strlen(sessions[sessionIndex].lastWord) > 0)
+        if (strlen(sessions[sessionIndex].lastWord) > 0)
         {
             printf("pre\n");
             int isTerminal = checkIfTerminationIsTerminal(sessions[sessionIndex].lastWord);
@@ -219,7 +222,8 @@ void fazanGameLogic(int client, int playerIndex, int sessionIndex)
             sprintf(buffer, "It's your turn! You currently have %d points!\n", sessions[sessionIndex].scores[playerIndex]);
             writeToclient(buffer, client);
             memset(buffer, 0, strlen(buffer));
-            if (!sessions[sessionIndex].lastWord || strlen(sessions[sessionIndex].lastWord) <= 0)
+            // if (!sessions[sessionIndex].lastWord || strlen(sessions[sessionIndex].lastWord) <= 0)
+            if (strlen(sessions[sessionIndex].lastWord) <= 0)
             {
                 char randC = pickARandomLetter();
                 sprintf(buffer, "Your word should start with %c:\n", randC);
@@ -239,7 +243,7 @@ void fazanGameLogic(int client, int playerIndex, int sessionIndex)
             }
             memset(buffer, 0, strlen(buffer));
             readFromClient(buffer, client);
-            //here comes the check for dictionary
+            // here comes the check for dictionary
             strcpy(sessions[sessionIndex].lastWord, buffer);
             memset(buffer, 0, strlen(buffer));
             sessions[sessionIndex].lastPlayer = playerIndex;
@@ -264,7 +268,8 @@ void fazanGameLogic(int client, int playerIndex, int sessionIndex)
     {
         phase = 3;
         send(client, &phase, sizeof(int), 0);
-        sem_wait(&sessions[sessionIndex].semaphore);
+        sem_wait(sessions[sessionIndex].semaphore);
+        printf("sem_268_wait");
         sprintf(buffer, "It's player %d's turn!\n", sessions[sessionIndex].turn);
         writeToclient(buffer, client);
         memset(buffer, 0, strlen(buffer));
@@ -301,11 +306,12 @@ void *handleClient(void *arg)
         memset(buffer, 0, strlen(buffer));
 
         if (signal == 0)
-        {
+        { // client
             recv(client, buffer, 1024, 0);
             printf("Room name choice: %s\n", buffer);
             sessionIndex = checkIfRoomExists(buffer);
             pthread_mutex_lock(&mutex);
+            printf("pre_befif_pre");
             if (sessionIndex == -1)
             {
                 num_of_sessions += 1;
@@ -318,11 +324,16 @@ void *handleClient(void *arg)
                 sessions[sessionIndex].gameState = 0;
                 sessions[sessionIndex].scores[0] = 5;
                 sessions[sessionIndex].turn = 0;
-                sem_init(&sessions[sessionIndex].semaphore, 0, 0);
+                char semname[10] = {0};
+                int val = 0;
+                sprintf(semname, "/sem%d", sessionIndex);
+                // printf("\nsemaphore name:  ---  %s  ---\n", semname);
+                sessions[sessionIndex].semaphore = sem_open(semname, O_CREAT, 0644, val);
                 signal = 2;
             }
             else
             {
+                printf("pre_else_pre");
                 signal = 1;
                 playerIndex = sessions[sessionIndex].connectedPlayers;
                 sessions[sessionIndex].connectedPlayers += 1;
@@ -340,7 +351,8 @@ void *handleClient(void *arg)
             char msg2[1024];
             sprintf(msg2, "Your room number is %d\n", sessionIndex);
             writeToclient(msg2, client);
-            sem_wait(&sessions[sessionIndex].semaphore);
+            printf("sem_347_wait");
+            sem_wait(sessions[sessionIndex].semaphore);
         }
         else if (signal == 2)
         {
@@ -361,7 +373,8 @@ void *handleClient(void *arg)
                     pthread_mutex_unlock(&mutex);
                     for (int i = 0; i < sessions[sessionIndex].connectedPlayers; i++)
                     {
-                        sem_post(&sessions[sessionIndex].semaphore);
+                        printf("sem_369_post");
+                        sem_post(sessions[sessionIndex].semaphore);
                     }
                 }
             }

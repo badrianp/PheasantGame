@@ -10,3 +10,5 @@ client:
 	@echo "client file compiled."
 clean:
 	rm server client
+help:
+	open README.md
