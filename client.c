@@ -22,7 +22,6 @@ int lookupForServer(int *sock, struct sockaddr_in serv_addr)
     serv_addr.sin_family = AF_INET;
     serv_addr.sin_port = htons(PORT);
 
-    // Convert IPv4 and IPv6 addresses from text to binary form
     if (inet_pton(AF_INET, "127.0.0.1", &serv_addr.sin_addr) <= 0)
     {
         printf("\nInvalid address/ Address not supported \n");
@@ -84,6 +83,7 @@ int main(int argc, char const *argv[])
         scanf("%s", ans);
         if (ans[0] == 'y' || ans[0] == 'Y')
         {
+            sock = createClient();
             try = lookupForServer(&sock, serv_addr);
         }
         else
@@ -162,7 +162,8 @@ int main(int argc, char const *argv[])
                 memset(messg, 0, 1024);
                 strcpy(messg, buffer);
                 memset(buffer, 0, strlen(buffer));
-                printf("%s\n", firsts);
+                printf("%s", messg);
+                scanf("%s", buffer);
                 while (strlen(buffer) <= 0 || checkIfFirstLettersAreSame(buffer, firsts) == 0)
                 {
                     memset(buffer, 0, strlen(buffer));
@@ -170,7 +171,18 @@ int main(int argc, char const *argv[])
                     scanf("%s", buffer);
                 }
                 writeToServer(buffer, sock);
+
                 memset(buffer, 0, strlen(buffer));
+
+                readFromServer(buffer, sock);
+                printf("%s", buffer);
+
+                if (strcmp(buffer, "\n**************\n* You lost :( *\n**************\n") == 0)
+                {
+                    close(sock);
+                    return 0;
+                }
+
                 fflush(0);
             }
             else if (phase == 2)
